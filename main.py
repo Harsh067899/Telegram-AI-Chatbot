@@ -10,6 +10,8 @@ import io
 import fitz
 from config import BOT_TOKEN, MONGO_URI, DB_NAME, GEMINI_API_KEY
 import requests
+import nltk
+from textblob import TextBlob
 
 # Connect to MongoDB
 client = pymongo.MongoClient(MONGO_URI)
@@ -17,6 +19,21 @@ db = client[DB_NAME]
 users_collection = db["users"]
 chats_collection = db["chats"]  # AI chat history
 file_analysis_collection = db["file_analysis"]  # File metadata storage
+
+nltk.download('punkt_tab')
+
+
+def analyze_sentiment(text):
+    analysis = TextBlob(text)
+    polarity = analysis.sentiment.polarity
+    
+    if polarity > 0:
+        return "positive"
+    elif polarity < 0:
+        return "negative"
+    else:
+        return "neutral"
+
 
 # Initialize Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
@@ -68,8 +85,10 @@ async def collect_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_input = update.message.text
     chat_id = update.message.chat_id
+    sentiment = analyze_sentiment(user_input)
 
-    await update.message.reply_text("🤖 Thinking...")
+    await update.message.reply_text(f"🤖Thinking...")
+    await update.message.reply_text(f"🤖 Analyzing sentiment: {sentiment.capitalize()}...")
 
     try:
         # Call Gemini AI API
@@ -77,10 +96,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         bot_response = response.text if response.text else "⚠️ Sorry, I couldn't understand that."
 
         # Store chat history in MongoDB
+         # Modify response based on sentiment
+        if sentiment == "negative":
+            bot_response = "😞 I'm here for you. " + bot_response
+        elif sentiment == "positive":
+            bot_response = "😊 That sounds great! " + bot_response
+        
+        
         chats_collection.insert_one({
             "chat_id": chat_id,
             "user_input": user_input,
-            "bot_response": bot_response
+            "bot_response": bot_response,
+            "sentiment": sentiment
         })
 
         # Send response to user
